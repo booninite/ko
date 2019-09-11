@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -28,6 +29,8 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/types"
+	"github.com/google/ko/pkg/build"
 	"github.com/spf13/viper"
 )
 
@@ -36,15 +39,47 @@ var (
 	baseImageOverrides map[string]name.Reference
 )
 
-func getBaseImage(s string) (v1.Image, error) {
-	ref, ok := baseImageOverrides[s]
-	if !ok {
-		ref = defaultBaseImage
+func getBaseImage(platform string) build.GetBase {
+	return func(s string) (build.Result, error) {
+		ref, ok := baseImageOverrides[s]
+		if !ok {
+			ref = defaultBaseImage
+		}
+		ropt := []remote.Option{
+			remote.WithAuthFromKeychain(authn.DefaultKeychain),
+			remote.WithTransport(defaultTransport()),
+		}
+
+		var p v1.Platform
+		if platform != "" && platform != "all" {
+			parts := strings.Split(platform, "/")
+			if len(parts) > 0 {
+				p.OS = parts[0]
+			}
+			if len(parts) > 1 {
+				p.Architecture = parts[1]
+			}
+			if len(parts) > 2 {
+				p.Variant = parts[2]
+			}
+			ropt = append(ropt, remote.WithPlatform(p))
+		}
+
+		log.Printf("Using base %s for %s", ref, s)
+		desc, err := remote.Get(ref, ropt...)
+		if err != nil {
+			return nil, err
+		}
+		switch desc.MediaType {
+		case types.OCIImageIndex, types.DockerManifestList:
+			if platform == "all" {
+				return desc.ImageIndex()
+			}
+			return desc.Image()
+		default:
+			return desc.Image()
+		}
 	}
-	log.Printf("Using base %s for %s", ref, s)
-	return remote.Image(ref,
-		remote.WithTransport(defaultTransport()),
-		remote.WithAuthFromKeychain(authn.DefaultKeychain))
 }
 
 func getCreationTime() (*v1.Time, error) {

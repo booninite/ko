@@ -22,6 +22,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/daemon"
+	"github.com/google/ko/pkg/build"
 )
 
 const (
@@ -41,9 +42,15 @@ func NewDaemon(namer Namer, tags []string) Interface {
 }
 
 // Publish implements publish.Interface
-func (d *demon) Publish(img v1.Image, s string) (name.Reference, error) {
+func (d *demon) Publish(br build.Result, s string) (name.Reference, error) {
 	// https://github.com/google/go-containerregistry/issues/212
 	s = strings.ToLower(s)
+
+	// There's no way to write an index to a daemon, so attempt to downcast it to an image.
+	img, ok := br.(v1.Image)
+	if !ok {
+		return nil, fmt.Errorf("failed to interpret %s result as image: %v", s, br)
+	}
 
 	h, err := img.Digest()
 	if err != nil {

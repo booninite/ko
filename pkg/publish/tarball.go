@@ -22,6 +22,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
+	"github.com/google/ko/pkg/build"
 )
 
 type TarballPublisher struct {
@@ -44,9 +45,15 @@ func NewTarball(file, base string, namer Namer, tags []string) *TarballPublisher
 }
 
 // Publish implements publish.Interface.
-func (t *TarballPublisher) Publish(img v1.Image, s string) (name.Reference, error) {
+func (t *TarballPublisher) Publish(br build.Result, s string) (name.Reference, error) {
 	// https://github.com/google/go-containerregistry/issues/212
 	s = strings.ToLower(s)
+
+	// There's no way to write an index to a tarball, so attempt to downcast it to an image.
+	img, ok := br.(v1.Image)
+	if !ok {
+		return nil, fmt.Errorf("failed to interpret %s result as image: %v", s, br)
+	}
 
 	for _, tagName := range t.tags {
 		tag, err := name.ParseReference(fmt.Sprintf("%s/%s:%s", t.base, t.namer(s), tagName))
